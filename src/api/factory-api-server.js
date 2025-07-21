@@ -4,7 +4,7 @@ const bodyParser = require('body-parser');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { LLMFactory } = require('../ajent/llm-factory');
+const { LLMFactory } = require('../llm/llm-factory');
 
 /**
  * Creates and configures an Express API server with routes for LLM interaction,
@@ -19,7 +19,7 @@ const { LLMFactory } = require('../ajent/llm-factory');
  * @param {Function} [options.errorHandler] - Custom error handler
  * @returns {Object} Express app instance and server control methods
  */
-function createApiServer(options = {}) {
+function createLLMServer(options = {}) {
   const {
     app: existingApp,
     port = 3000,
@@ -29,9 +29,12 @@ function createApiServer(options = {}) {
     errorHandler
   } = options;
 
-  const defaultLlmToken = options.llmToken;
-  const defaultLlmName = options.llmName || 'openai';
-  const defaultLlmModel = options.llmModel || 'gpt-4.1-mini';
+  const client = LLMFactory.createClient({
+    llmName: options.llmName,
+    llmToken: options.llmToken || process.env.AJENT_LLM_TOKEN,
+    llmProject: options.llmProject,
+    llmModel: options.llmModel});
+    
   
   // Use existing app or create a new one
   const app = existingApp || express();
@@ -106,17 +109,12 @@ function createApiServer(options = {}) {
   // Routes
   agentRouter.post('/message', async (req, res) => {
     try {
+      const { messages, tools } = req.body;
 
       const payload = req.body;
       const payloadSize = Buffer.byteLength(JSON.stringify(payload), 'utf8');
       console.log('Payload:', payload);
       console.log('Payload size (bytes):', payloadSize);
-
-      const { messages, tools } = req.body;
-
-      const llmName = req.body.llmName || defaultLlmName
-      const llmToken = req.body.llmToken || defaultLlmToken
-      const llmModel = req.body.model || defaultLlmModel
       
       // Call the beforeRequest hook if provided
       if (typeof beforeRequest === 'function') {
@@ -124,17 +122,8 @@ function createApiServer(options = {}) {
         if (shouldContinue === false) return; // Hook handled the response
       }
       
-      // Get LLM client
-      const client = LLMFactory.createClient(llmName, llmToken);
-      
-      if (!client) {
-        return res.sendError(400, 'Invalid LLM name', `LLM "${llmName}" is not supported`);
-      }
-      
-      let response;
-      
       // Handle normal response
-      response = await client.send(messages, tools || [], llmModel);
+      let response = await client.send(messages, tools || []);
         
       // Call afterResponse hook if provided
       if (typeof afterResponse === 'function') {
@@ -161,17 +150,12 @@ function createApiServer(options = {}) {
 
   agentRouter.post('/message/stream', async (req, res) => {
     try {
+      const { messages, tools } = req.body;
 
       const payload = req.body;
       const payloadSize = Buffer.byteLength(JSON.stringify(payload), 'utf8');
-      console.log('Payload stream:', payload);
+      console.log('Payload:', payload);
       console.log('Payload size (bytes):', payloadSize);
-
-      const { messages, tools } = req.body;
-
-      const llmName = req.body.llmName || defaultLlmName
-      const llmToken = req.body.llmToken || defaultLlmToken
-      const llmModel = req.body.model || defaultLlmModel
       
       // Call the beforeRequest hook if provided
       if (typeof beforeRequest === 'function') {
@@ -179,18 +163,11 @@ function createApiServer(options = {}) {
         if (shouldContinue === false) return; // Hook handled the response
       }
       
-      // Get LLM client
-      const client = LLMFactory.createClient(llmName, llmToken);
-      
-      if (!client) {
-        return res.sendError(400, 'Invalid LLM name', `LLM "${llmName}" is not supported`);
-      }
-      
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
       
-      const streamGenerator = await client.stream(messages, tools || [], llmModel);
+      const streamGenerator = await client.stream(messages, tools || [], options.llmModel);
       
       // Call afterResponse hook once if provided
       if (typeof afterResponse === 'function') {
@@ -214,8 +191,6 @@ function createApiServer(options = {}) {
 
   agentRouter.post('/audio_message', upload.single('audio'), async (req, res) => {
     try {
-      const llmName = req.body.llmName || defaultLlmName
-      const llmToken = req.body.llmToken || defaultLlmToken
       
       if (!req.file) {
         return res.sendError(400, 'Missing file', 'No audio file uploaded');
@@ -225,13 +200,6 @@ function createApiServer(options = {}) {
       if (typeof beforeRequest === 'function') {
         const shouldContinue = await beforeRequest(req, res);
         if (shouldContinue === false) return; // Hook handled the response
-      }
-      
-      // Get LLM client
-      const client = LLMFactory.createClient(llmName, llmToken);
-      
-      if (!client) {
-        return res.sendError(400, 'Invalid LLM name', `LLM "${llmName}" is not supported`);
       }
       
       const audioFilePath = req.file.path;
@@ -294,4 +262,4 @@ function createApiServer(options = {}) {
   };
 }
 
-module.exports = createApiServer;
+module.exports = createLLMServer;
