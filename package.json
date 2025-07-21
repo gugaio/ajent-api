@@ -1,6 +1,6 @@
 {
   "name": "ajent-api",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "description": "Library to create a LLM Api with function calling",
   "main": "lib/index.js",
   "exports": {
@@ -10,7 +10,8 @@
     "test": "jest",
     "lint": "",
     "prepare": "npm run lint",
-    "start:example": "node examples/api-server.js"
+    "start": "node server.js",
+    "start:example": "node sample.js"
   },
   "keywords": [],
   "author": "",
