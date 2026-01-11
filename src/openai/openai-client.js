@@ -8,6 +8,9 @@ class OpenAIClient extends LLMClient {
   constructor(config) {
     super(config);
 
+    this.config.temperature = config.temperature ?? 0.1;
+    this.config.maxCompletionTokens = config.maxCompletionTokens ?? config.maxOutputTokens ?? 4096;
+    this.config.topP = config.topP ?? 0.95;
   }
 
   validateConfig() {
@@ -45,11 +48,23 @@ class OpenAIClient extends LLMClient {
 
   async _sendImplementation(messages, tools, model) {
     try {
-      const response = await this._client.chat.completions.create({
+      const request = {
         model: model || this.config.model || "gpt-4.1",
         messages: messages,
         tools: tools
-      });
+      };
+
+      if (this.config.temperature !== undefined) {
+        request.temperature = this.config.temperature;
+      }
+      if (this.config.maxCompletionTokens !== undefined) {
+        request.max_completion_tokens = this.config.maxCompletionTokens;
+      }
+      if (this.config.topP !== undefined) {
+        request.top_p = this.config.topP;
+      }
+
+      const response = await this._client.chat.completions.create(request);
 
       const message = response.choices[0].message;
       return this.serializeResponse(message);
@@ -64,12 +79,24 @@ class OpenAIClient extends LLMClient {
 
   async _streamImplementation(messages, tools, model) {
     try {
-      const stream = await this._client.chat.completions.create({
+      const request = {
         model: model || this.config.model || "gpt-4.1",
         messages: messages,
         tools: tools,
         stream: true
-      });
+      };
+
+      if (this.config.temperature !== undefined) {
+        request.temperature = this.config.temperature;
+      }
+      if (this.config.maxCompletionTokens !== undefined) {
+        request.max_completion_tokens = this.config.maxCompletionTokens;
+      }
+      if (this.config.topP !== undefined) {
+        request.top_p = this.config.topP;
+      }
+
+      const stream = await this._client.chat.completions.create(request);
 
       // Initialize variables to accumulate the response
       const currentToolCalls = {};

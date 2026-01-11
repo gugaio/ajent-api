@@ -105,6 +105,34 @@ describe('OpenAIClient', () => {
     expect(result.serialized).toBe(true);
   });
 
+  test('should set default generation parameters', () => {
+    expect(client.config.temperature).toBe(0.1);
+    expect(client.config.maxCompletionTokens).toBe(4096);
+    expect(client.config.topP).toBe(0.95);
+  });
+
+  test('should allow overriding default generation parameters', () => {
+    const customClient = new OpenAIClient({
+      llmToken: 'test-token',
+      model: 'gpt-test',
+      temperature: 0.8,
+      maxCompletionTokens: 2048,
+      topP: 0.5
+    });
+    expect(customClient.config.temperature).toBe(0.8);
+    expect(customClient.config.maxCompletionTokens).toBe(2048);
+    expect(customClient.config.topP).toBe(0.5);
+  });
+
+  test('should use maxOutputTokens as fallback for maxCompletionTokens', () => {
+    const customClient = new OpenAIClient({
+      llmToken: 'test-token',
+      model: 'gpt-test',
+      maxOutputTokens: 1024
+    });
+    expect(customClient.config.maxCompletionTokens).toBe(1024);
+  });
+
   
 
   describe('_sendImplementation', () => {
@@ -123,6 +151,9 @@ describe('OpenAIClient', () => {
         model: 'gpt-test',
         messages: [{ role: 'user', content: 'hi' }],
         tools: [],
+        temperature: 0.1,
+        max_completion_tokens: 4096,
+        top_p: 0.95
       });
       expect(result.serialized).toBe(true);
       expect(result.role).toBe('assistant');

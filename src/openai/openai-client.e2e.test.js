@@ -44,7 +44,7 @@ describe('OpenAIClient E2E Tests', () => {
       console.log('✓ API key found, running E2E tests');
       client = new OpenAIClient({
         llmToken: OPENAI_API_KEY,
-        model: 'gpt-5-nano'
+        model: 'gpt-4o-mini'
       });
       client.validateConfig();
     }

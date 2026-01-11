@@ -90,6 +90,29 @@ describe('VertexAIClient', () => {
     expect(result.serialized).toBe(true);
   });
 
+  test('should set default generation parameters', () => {
+    expect(client.config.temperature).toBe(0.1);
+    expect(client.config.maxOutputTokens).toBe(4096);
+    expect(client.config.topP).toBe(0.95);
+    expect(client.config.topK).toBe(20);
+  });
+
+  test('should allow overriding default generation parameters', () => {
+    const customClient = new VertexAIClient({
+      llmProject: 'test-project',
+      llmLocation: 'us-central1',
+      llmModel: 'gemini-test',
+      temperature: 0.8,
+      maxOutputTokens: 2048,
+      topP: 0.5,
+      topK: 40
+    });
+    expect(customClient.config.temperature).toBe(0.8);
+    expect(customClient.config.maxOutputTokens).toBe(2048);
+    expect(customClient.config.topP).toBe(0.5);
+    expect(customClient.config.topK).toBe(40);
+  });
+
   describe('_buildRequest', () => {
     beforeEach(() => {
       client.validateConfig();
@@ -105,7 +128,7 @@ describe('VertexAIClient', () => {
       expect(mockConvertTools).toHaveBeenCalledWith(tools);
     });
 
-    test('should include system_instruction when present', () => {
+    test('should include systemInstruction when present', () => {
       mockConvertMessages.mockReturnValue({
         systemInstruction: { parts: [{ text: 'You are a helpful assistant' }] },
         contents: [{ role: 'user', parts: [{ text: 'test' }] }]
@@ -113,7 +136,7 @@ describe('VertexAIClient', () => {
 
       const result = client._buildRequest([], []);
 
-      expect(result.system_instruction).toEqual({
+      expect(result.systemInstruction).toEqual({
         parts: [{ text: 'You are a helpful assistant' }]
       });
     });
@@ -126,7 +149,7 @@ describe('VertexAIClient', () => {
 
       const result = client._buildRequest([], []);
 
-      expect(result.system_instruction).toBeUndefined();
+      expect(result.systemInstruction).toBeUndefined();
     });
 
     test('should include tools when present', () => {
@@ -160,6 +183,189 @@ describe('VertexAIClient', () => {
       expect(result.contents).toEqual([
         { role: 'user', parts: [{ text: 'test' }] }
       ]);
+    });
+
+    test('should include generationConfig when temperature is set', () => {
+      const cleanClient = new VertexAIClient({ ...config, temperature: 0.7 });
+      cleanClient.validateConfig();
+      mockConvertMessages.mockReturnValue({
+        systemInstruction: null,
+        contents: [{ role: 'user', parts: [{ text: 'test' }] }]
+      });
+
+      const result = cleanClient._buildRequest([], []);
+
+      expect(result.generationConfig).toBeDefined();
+      expect(result.generationConfig.temperature).toBe(0.7);
+    });
+
+    test('should include generationConfig when maxOutputTokens is set', () => {
+      const cleanClient = new VertexAIClient({ ...config, maxOutputTokens: 1024 });
+      cleanClient.validateConfig();
+      mockConvertMessages.mockReturnValue({
+        systemInstruction: null,
+        contents: [{ role: 'user', parts: [{ text: 'test' }] }]
+      });
+
+      const result = cleanClient._buildRequest([], []);
+
+      expect(result.generationConfig).toBeDefined();
+      expect(result.generationConfig.maxOutputTokens).toBe(1024);
+    });
+
+    test('should include generationConfig when topP is set', () => {
+      const cleanClient = new VertexAIClient({ ...config, topP: 0.9 });
+      cleanClient.validateConfig();
+      mockConvertMessages.mockReturnValue({
+        systemInstruction: null,
+        contents: [{ role: 'user', parts: [{ text: 'test' }] }]
+      });
+
+      const result = cleanClient._buildRequest([], []);
+
+      expect(result.generationConfig).toBeDefined();
+      expect(result.generationConfig.topP).toBe(0.9);
+    });
+
+    test('should include generationConfig when topK is set', () => {
+      const cleanClient = new VertexAIClient({ ...config, topK: 40 });
+      cleanClient.validateConfig();
+      mockConvertMessages.mockReturnValue({
+        systemInstruction: null,
+        contents: [{ role: 'user', parts: [{ text: 'test' }] }]
+      });
+
+      const result = cleanClient._buildRequest([], []);
+
+      expect(result.generationConfig).toBeDefined();
+      expect(result.generationConfig.topK).toBe(40);
+    });
+
+    test('should include all generationConfig parameters', () => {
+      const cleanClient = new VertexAIClient({
+        ...config,
+        temperature: 0.7,
+        maxOutputTokens: 1024,
+        topP: 0.9,
+        topK: 40
+      });
+      cleanClient.validateConfig();
+      mockConvertMessages.mockReturnValue({
+        systemInstruction: null,
+        contents: [{ role: 'user', parts: [{ text: 'test' }] }]
+      });
+
+      const result = cleanClient._buildRequest([], []);
+
+      expect(result.generationConfig).toEqual({
+        temperature: 0.7,
+        maxOutputTokens: 1024,
+        topP: 0.9,
+        topK: 40
+      });
+    });
+
+    test('should include default generationConfig when no parameters set', () => {
+      const cleanClient = new VertexAIClient({ ...config });
+      cleanClient.validateConfig();
+      mockConvertMessages.mockReturnValue({
+        systemInstruction: null,
+        contents: [{ role: 'user', parts: [{ text: 'test' }] }]
+      });
+
+      const result = cleanClient._buildRequest([], []);
+
+      expect(result.generationConfig).toEqual({
+        temperature: 0.1,
+        maxOutputTokens: 4096,
+        topP: 0.95,
+        topK: 20
+      });
+    });
+  });
+
+  describe('_buildGenerationConfig', () => {
+    test('should return config with defaults when no generation config parameters are set', () => {
+      const cleanClient = new VertexAIClient({ ...config });
+      const result = cleanClient._buildGenerationConfig();
+      expect(result).toEqual({
+        temperature: 0.1,
+        maxOutputTokens: 4096,
+        topP: 0.95,
+        topK: 20
+      });
+    });
+
+    test('should return config with custom temperature and defaults', () => {
+      const cleanClient = new VertexAIClient({ ...config, temperature: 0.7 });
+      const result = cleanClient._buildGenerationConfig();
+      expect(result).toEqual({
+        temperature: 0.7,
+        maxOutputTokens: 4096,
+        topP: 0.95,
+        topK: 20
+      });
+    });
+
+    test('should return config with custom maxOutputTokens and defaults', () => {
+      const cleanClient = new VertexAIClient({ ...config, maxOutputTokens: 1024 });
+      const result = cleanClient._buildGenerationConfig();
+      expect(result).toEqual({
+        temperature: 0.1,
+        maxOutputTokens: 1024,
+        topP: 0.95,
+        topK: 20
+      });
+    });
+
+    test('should return config with custom topP and defaults', () => {
+      const cleanClient = new VertexAIClient({ ...config, topP: 0.9 });
+      const result = cleanClient._buildGenerationConfig();
+      expect(result).toEqual({
+        temperature: 0.1,
+        maxOutputTokens: 4096,
+        topP: 0.9,
+        topK: 20
+      });
+    });
+
+    test('should return config with custom topK and defaults', () => {
+      const cleanClient = new VertexAIClient({ ...config, topK: 40 });
+      const result = cleanClient._buildGenerationConfig();
+      expect(result).toEqual({
+        temperature: 0.1,
+        maxOutputTokens: 4096,
+        topP: 0.95,
+        topK: 40
+      });
+    });
+
+    test('should return config with all parameters', () => {
+      const cleanClient = new VertexAIClient({
+        ...config,
+        temperature: 0.7,
+        maxOutputTokens: 1024,
+        topP: 0.9,
+        topK: 40
+      });
+      const result = cleanClient._buildGenerationConfig();
+      expect(result).toEqual({
+        temperature: 0.7,
+        maxOutputTokens: 1024,
+        topP: 0.9,
+        topK: 40
+      });
+    });
+
+    test('should handle zero temperature', () => {
+      const cleanClient = new VertexAIClient({ ...config, temperature: 0 });
+      const result = cleanClient._buildGenerationConfig();
+      expect(result).toEqual({
+        temperature: 0,
+        maxOutputTokens: 4096,
+        topP: 0.95,
+        topK: 20
+      });
     });
   });
 

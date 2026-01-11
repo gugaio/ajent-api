@@ -10,8 +10,12 @@ class VertexAIClient extends LLMClient {
   constructor(config) {
     super(config);
     console.log("GOOGLE_APPLICATION_CREDENTIALS:", process.env.GOOGLE_APPLICATION_CREDENTIALS);
-    
-    // Pode adicionar padrões específicos do Vertex AI para retry
+
+    this.config.temperature = config.temperature ?? 0.1;
+    this.config.maxOutputTokens = config.maxOutputTokens ?? 4096;
+    this.config.topP = config.topP ?? 0.95;
+    this.config.topK = config.topK ?? 20;
+
     this.addRetryableErrorPatterns([
       'vertex ai quota exceeded',
       'gemini rate limit',
@@ -137,7 +141,7 @@ class VertexAIClient extends LLMClient {
     const request = { contents };
 
     if (systemInstruction) {
-      request.system_instruction = systemInstruction;
+      request.systemInstruction = systemInstruction;
     }
 
     const convertedTools = convertTools(tools);
@@ -145,7 +149,39 @@ class VertexAIClient extends LLMClient {
       request.tools = convertedTools;
     }
 
+    const generationConfig = this._buildGenerationConfig();
+    if (generationConfig) {
+      request.generationConfig = generationConfig;
+    }
+
     return request;
+  }
+
+  _buildGenerationConfig() {
+    const config = {};
+    let hasConfig = false;
+
+    if (this.config.temperature !== undefined) {
+      config.temperature = this.config.temperature;
+      hasConfig = true;
+    }
+
+    if (this.config.maxOutputTokens !== undefined) {
+      config.maxOutputTokens = this.config.maxOutputTokens;
+      hasConfig = true;
+    }
+
+    if (this.config.topP !== undefined) {
+      config.topP = this.config.topP;
+      hasConfig = true;
+    }
+
+    if (this.config.topK !== undefined) {
+      config.topK = this.config.topK;
+      hasConfig = true;
+    }
+
+    return hasConfig ? config : null;
   }
 
   _parseResponse(response) {
@@ -161,7 +197,7 @@ class VertexAIClient extends LLMClient {
       }
       if (part.functionCall) {
         tool_calls.push({
-          id: part.functionCall.name,
+          id: part.functionCall.name + '_' + Date.now() ,
           type: 'function',
           function: {
             name: part.functionCall.name,
