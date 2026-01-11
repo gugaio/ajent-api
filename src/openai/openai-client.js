@@ -14,8 +14,9 @@ class OpenAIClient extends LLMClient {
     if(!this.config || !this.config.llmToken) {
       throw new Error("OpenAIClient requires a valid configuration with an API token.");
     }
-      this._client = new OpenAI({ apiKey: this.config.llmToken });
-    }
+    //TODO: instantiate the OpenAI client should be here???
+    this._client = new OpenAI({ apiKey: this.config.llmToken });
+  }
 
   async _sendImplementation(messages, tools, model) {
     try {
@@ -57,7 +58,7 @@ class OpenAIClient extends LLMClient {
   async _streamImplementation(messages, tools, model) {
     try {
       const stream = await this._client.chat.completions.create({
-        model: model,
+        model: model || this.config.model || "gpt-4.1",
         messages: messages,
         tools: tools,
         stream: true
