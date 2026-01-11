@@ -133,13 +133,18 @@ class VertexAIClient extends LLMClient {
   }
 
   _buildRequest(messages, tools) {
-    const request = {
-      contents: convertMessages(messages),
-    };
+    const { systemInstruction, contents } = convertMessages(messages);
+    const request = { contents };
+
+    if (systemInstruction) {
+      request.system_instruction = systemInstruction;
+    }
+
     const convertedTools = convertTools(tools);
     if (convertedTools.length > 0) {
       request.tools = convertedTools;
     }
+
     return request;
   }
 
