@@ -86,12 +86,26 @@ describe('OpenAIClient', () => {
     expect(client).toBeInstanceOf(LLMClient);
   });
 
+  test('validateConfig throws when llmToken is missing', () => {
+    expect(() => {
+      new OpenAIClient({ model: 'gpt-test' });
+    }).toThrow('OpenAIClient requires a valid configuration with an API token.');
+  });
+
+  test('validateConfig does not throw when llmToken is provided', () => {
+    expect(() => {
+      new OpenAIClient({ llmToken: 'valid-token', model: 'gpt-test' });
+    }).not.toThrow();
+  });
+
   test('serializeResponse uses ResponseSerializer', () => {
     const resp = { foo: 'bar' };
     const result = client.serializeResponse(resp);
     expect(mockSerializeMessage).toHaveBeenCalledWith(resp);
     expect(result.serialized).toBe(true);
   });
+
+  
 
   describe('_sendImplementation', () => {
     beforeEach(() => {
