@@ -133,7 +133,7 @@ describe('OpenAIClient', () => {
       error.message = 'api fail';
       error.code = 500;
       mockCreate.mockRejectedValue(error);
-      await expect(client._sendImplementation([], [], 'gpt-test')).rejects.toThrow('OpenAI API error: api fail');
+      await expect(client._sendImplementation([], [], 'gpt-test')).rejects.toThrow('APIError: api fail');
       expect(mockLogger.error).toHaveBeenCalled();
     });
 
@@ -142,7 +142,7 @@ describe('OpenAIClient', () => {
       error.message = 'rate limit';
       error.code = 429;
       mockCreate.mockRejectedValue(error);
-      await expect(client._sendImplementation([], [], 'gpt-test')).rejects.toThrow('Rate limit exceeded: rate limit');
+      await expect(client._sendImplementation([], [], 'gpt-test')).rejects.toThrow('RateLimitError: rate limit');
       expect(mockLogger.warn).toHaveBeenCalled();
     });
 
@@ -151,7 +151,7 @@ describe('OpenAIClient', () => {
       error.message = 'bad request';
       error.code = 400;
       mockCreate.mockRejectedValue(error);
-      await expect(client._sendImplementation([], [], 'gpt-test')).rejects.toThrow('Invalid request: bad request');
+      await expect(client._sendImplementation([], [], 'gpt-test')).rejects.toThrow('InvalidRequestError: bad request');
       expect(mockLogger.error).toHaveBeenCalled();
     });
 
@@ -160,7 +160,7 @@ describe('OpenAIClient', () => {
       error.message = 'auth fail';
       error.code = 401;
       mockCreate.mockRejectedValue(error);
-      await expect(client._sendImplementation([], [], 'gpt-test')).rejects.toThrow('Authentication error: auth fail');
+      await expect(client._sendImplementation([], [], 'gpt-test')).rejects.toThrow('AuthenticationError: auth fail');
       expect(mockLogger.error).toHaveBeenCalled();
     });
 
@@ -169,12 +169,11 @@ describe('OpenAIClient', () => {
       error.message = 'openai error';
       error.code = 500;
       mockCreate.mockRejectedValue(error);
-      await expect(client._sendImplementation([], [], 'gpt-test')).rejects.toThrow('OpenAI error: openai error');
+      await expect(client._sendImplementation([], [], 'gpt-test')).rejects.toThrow('OpenAIError: openai error');
       expect(mockLogger.error).toHaveBeenCalled();
     });
 
     test('handles unknown error', async () => {
-      // Erro simples, não é nenhuma das classes OpenAI
       const error = new Error('unknown');
       error.code = 999;
       mockCreate.mockRejectedValue(error);

@@ -18,6 +18,31 @@ class OpenAIClient extends LLMClient {
     this._client = new OpenAI({ apiKey: this.config.llmToken });
   }
 
+  _handleOpenAIError(error) {
+    const errorHandlers = {
+      APIError: () => logger.error(`OpenAI API error: ${error.message}`),
+      RateLimitError: () => logger.warn('Rate limit exceeded. Please slow down your requests.'),
+      InvalidRequestError: () => logger.error(`Invalid request: ${error.message}`),
+      AuthenticationError: () => logger.error(`Authentication error: ${error.message}`),
+      OpenAIError: () => logger.error(`General OpenAI error: ${error.message}`)
+    };
+
+    const handler = errorHandlers[error.name];
+    if (handler) {
+      handler();
+      const err = new Error(`${error.name}: ${error.message}`);
+      err.code = error.code;
+      err.status = error.status;
+      throw err;
+    }
+
+    logger.error(`Unexpected error: ${error.message}`);
+    const err = new Error(`Unexpected error: ${error.message}`);
+    err.code = error.code;
+    err.status = error.status;
+    throw err;
+  }
+
   async _sendImplementation(messages, tools, model) {
     try {
       const response = await this._client.chat.completions.create({
@@ -25,29 +50,11 @@ class OpenAIClient extends LLMClient {
         messages: messages,
         tools: tools
       });
-      
+
       const message = response.choices[0].message;
       return this.serializeResponse(message);
     } catch (error) {
-      if (error.name === 'APIError') {
-        logger.error(`OpenAI API error: ${error}`);
-        throw new Error(`OpenAI API error: ${error.message}`, error.code);
-      } else if (error.name === 'RateLimitError') {
-        logger.warn("Rate limit exceeded. Please slow down your requests.");
-        throw new Error(`Rate limit exceeded: ${error.message}`, error.code);
-      } else if (error.name === 'InvalidRequestError') {
-        logger.error(`Invalid request: ${error}`);
-        throw new Error(`Invalid request: ${error.message}`, error.code);
-      } else if (error.name === 'AuthenticationError') {
-        logger.error(`Authentication error: ${error}`);
-        throw new Error(`Authentication error: ${error.message}`, error.code);
-      } else if (error.name === 'OpenAIError') {
-        logger.error(`General OpenAI error: ${error}`);
-        throw new Error(`OpenAI error: ${error.message}`, error.code);
-      } else {
-        logger.error(`Unexpected error occurred: ${error}`);
-        throw new Error(`Unexpected error: ${error.message}`, error.code);
-      }
+      this._handleOpenAIError(error);
     }
   }
 
