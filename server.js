@@ -1,6 +1,6 @@
-const { createApiServer } = require('./lib');
+const { createLLMServer } = require('./src/index');
 
-const api = createApiServer({
+const api = createLLMServer({
   port: process.env.PORT || 3000,
   llmToken: process.env.LLM_TOKEN,
   llmName: process.env.LLM_NAME || 'openai',

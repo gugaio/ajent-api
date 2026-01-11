@@ -5,6 +5,29 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { LLMFactory } = require('../llm/llm-factory');
+const { createHookWrapper, createStreamingHookWrapper } = require('./hook-wrappers');
+const Logger = require('../utils/logger');
+
+function logPayload(req) {
+  const payload = req.body;
+  const payloadSize = Buffer.byteLength(JSON.stringify(payload), 'utf8');
+  Logger.debug(`Payload: ${JSON.stringify(payload)}`);
+  Logger.debug(`Payload size (bytes): ${payloadSize}`);
+}
+
+function validatePayload(req, res, next) {
+  const { messages } = req.body;
+  
+  if (!messages) {
+    return res.sendError(400, 'Missing required field', 'messages is required');
+  }
+  
+  if (!Array.isArray(messages)) {
+    return res.sendError(400, 'Invalid field type', 'messages must be an array');
+  }
+  
+  next();
+}
 
 /**
  * Creates and configures an Express API server with routes for LLM interaction,
@@ -77,157 +100,90 @@ function createLLMServer(options = {}) {
     return res.sendError(500, 'Internal server error', err.message);
   };
 
+  // Create hook wrappers with current configuration
+  const withHooks = createHookWrapper(beforeRequest, afterResponse, errorHandler, defaultErrorHandler);
+  const withHooksStreaming = createStreamingHookWrapper(beforeRequest, afterResponse, errorHandler, defaultErrorHandler);
+
   // Define a router for our agent routes
   const agentRouter = express.Router();
   agentRouter.use(ajentMiddleware);
+  agentRouter.use(validatePayload);
 
   // Routes
-  agentRouter.get('/ping', async (req, res) => {
-    try {
-      // Call the beforeRequest hook if provided
-      if (typeof beforeRequest === 'function') {
-        const shouldContinue = await beforeRequest(req, res);
-        if (shouldContinue === false) return; // Hook handled the response
-      }
-      
-      // Call afterResponse hook if provided
-      if (typeof afterResponse === 'function') {
-        await afterResponse(req, { message: 'pong' });
-      }
-      
-      return res.json({ message: 'pong' });
-    } catch (error) {
-      // Use custom error handler if provided, otherwise use default
-      if (typeof errorHandler === 'function') {
-        return errorHandler(error, req, res);
-      } else {
-        return defaultErrorHandler(error, req, res);
-      }
-    }
-  });
+  agentRouter.get('/ping', withHooks(async (req, res) => {
+    return { message: 'pong' };
+  }));
   
-  // Routes
-  agentRouter.post('/message', async (req, res) => {
+  agentRouter.post('/message', withHooks(async (req, res) => {
+    const { messages, tools } = req.body;
+
+    logPayload(req);
+
+    const response = await client.send(messages, tools || []);
+
+    return { message: response };
+  }));
+
+  agentRouter.post('/message/stream', withHooksStreaming(async (req, res) => {
+    const { messages, tools } = req.body;
+
+    logPayload(req);
+
     try {
-      const { messages, tools } = req.body;
+      const streamGenerator = await client.stream(messages, tools || [], options.llmModel);
 
-      const payload = req.body;
-      const payloadSize = Buffer.byteLength(JSON.stringify(payload), 'utf8');
-      console.log('Payload:', payload);
-      console.log('Payload size (bytes):', payloadSize);
-      
-      // Call the beforeRequest hook if provided
-      if (typeof beforeRequest === 'function') {
-        const shouldContinue = await beforeRequest(req, res);
-        if (shouldContinue === false) return; // Hook handled the response
-      }
-      
-      // Handle normal response
-      let response = await client.send(messages, tools || []);
-        
-      // Call afterResponse hook if provided
-      if (typeof afterResponse === 'function') {
-        const modifiedResponse = await afterResponse(req, response);
-        if (modifiedResponse) {
-          response = modifiedResponse;
-        }
-      }
-
-      const result = {
-        message: response,
-      }
-      
-      return res.json(result);
-    } catch (error) {
-      // Use custom error handler if provided, otherwise use default
-      if (typeof errorHandler === 'function') {
-        return errorHandler(error, req, res);
-      } else {
-        return defaultErrorHandler(error, req, res);
-      }
-    }
-  });
-
-  agentRouter.post('/message/stream', async (req, res) => {
-    try {
-      const { messages, tools } = req.body;
-
-      const payload = req.body;
-      const payloadSize = Buffer.byteLength(JSON.stringify(payload), 'utf8');
-      console.log('Payload:', payload);
-      console.log('Payload size (bytes):', payloadSize);
-      
-      // Call the beforeRequest hook if provided
-      if (typeof beforeRequest === 'function') {
-        const shouldContinue = await beforeRequest(req, res);
-        if (shouldContinue === false) return; // Hook handled the response
-      }
-      
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
-      
-      const streamGenerator = await client.stream(messages, tools || [], options.llmModel);
-      
-      // Call afterResponse hook once if provided
-      if (typeof afterResponse === 'function') {
-        afterResponse(req, { streaming: true });
-      }
-      
-      for await (const chunk of streamGenerator) {
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-      }
-      
-      return res.end();
-    } catch (error) {
-      // Use custom error handler if provided, otherwise use default
-      if (typeof errorHandler === 'function') {
-        return errorHandler(error, req, res);
-      } else {
-        return defaultErrorHandler(error, req, res);
-      }
-    }
-  });
+      res.flushHeaders();
 
-  agentRouter.post('/audio_message', upload.single('audio'), async (req, res) => {
-    try {
-      
-      if (!req.file) {
-        return res.sendError(400, 'Missing file', 'No audio file uploaded');
-      }
-      
-      // Call the beforeRequest hook if provided
-      if (typeof beforeRequest === 'function') {
-        const shouldContinue = await beforeRequest(req, res);
-        if (shouldContinue === false) return; // Hook handled the response
-      }
-      
-      const audioFilePath = req.file.path;
-      const transcription = await client.stt(audioFilePath);
-      
-      // Clean up uploaded file
-      fs.unlinkSync(audioFilePath);
-      
-      const response = { transcription };
-      
-      // Call afterResponse hook if provided
-      if (typeof afterResponse === 'function') {
-        const modifiedResponse = await afterResponse(req, response);
-        if (modifiedResponse) {
-          return res.json(modifiedResponse);
+      for await (const chunk of streamGenerator) {
+        if (res.writableEnded || res.closed) {
+          Logger.debug('Client disconnected, stopping stream');
+          break;
+        }
+
+        try {
+          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        } catch (writeError) {
+          if (writeError.code === 'ECONNRESET' || writeError.code === 'EPIPE') {
+            Logger.debug('Client disconnected during write');
+            break;
+          }
+          throw writeError;
         }
       }
-      
-      return res.json(response);
+
+      if (!res.writableEnded) {
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      }
     } catch (error) {
-      // Use custom error handler if provided, otherwise use default
-      if (typeof errorHandler === 'function') {
-        return errorHandler(error, req, res);
-      } else {
-        return defaultErrorHandler(error, req, res);
+      Logger.error(`Stream error: ${error.message}`);
+
+      if (!res.headersSent) {
+        return res.status(500).json({ error: 'Stream error', details: error.message });
+      }
+
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify({ error: error.message, type: 'error' })}\n\n`);
+        return res.end();
       }
     }
-  });
+  }));
+
+  agentRouter.post('/audio_message', upload.single('audio'), withHooks(async (req, res) => {
+    if (!req.file) {
+      return res.sendError(400, 'Missing file', 'No audio file uploaded');
+    }
+
+    const audioFilePath = req.file.path;
+    const transcription = await client.stt(audioFilePath);
+
+    fs.unlinkSync(audioFilePath);
+
+    return { transcription };
+  }));
 
   // Mount the agent router to the app
   app.use('/agent', agentRouter);
