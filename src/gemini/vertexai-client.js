@@ -16,11 +16,18 @@ class VertexAIClient extends LLMClient {
     this.config.topP = config.topP ?? 0.95;
     this.config.topK = config.topK ?? 20;
 
+    this._toolCallIdCounter = 0;
+
     this.addRetryableErrorPatterns([
       'vertex ai quota exceeded',
       'gemini rate limit',
       'resource exhausted'
     ]);
+  }
+
+  _generateToolCallId(functionName) {
+    this._toolCallIdCounter++;
+    return `${functionName}_${this._toolCallIdCounter}`;
   }
 
   validateConfig() {
@@ -51,7 +58,7 @@ class VertexAIClient extends LLMClient {
     // Initialize variables to accumulate the response
     const currentToolCalls = {};
     let currentContent = "";
-    let currentToolCallId = null;
+    let streamErrors = [];
 
     // Return an async iterator that processes the Vertex AI stream
     return {
@@ -64,7 +71,7 @@ class VertexAIClient extends LLMClient {
               if (!candidate) continue;
 
               const parts = candidate?.content?.parts || [];
-              
+
               for (const part of parts) {
                 // Handle text content
                 if (part.text) {
@@ -74,12 +81,12 @@ class VertexAIClient extends LLMClient {
                     content: part.text
                   };
                 }
-                
+
                 // Handle function calls
                 if (part.functionCall) {
                   const functionCall = part.functionCall;
-                  currentToolCallId = functionCall.name + '_' + Date.now(); // Generate unique ID
-                  
+                  const currentToolCallId = this._generateToolCallId(functionCall.name);
+
                   currentToolCalls[currentToolCallId] = {
                     id: currentToolCallId,
                     type: "function",
@@ -88,14 +95,14 @@ class VertexAIClient extends LLMClient {
                       arguments: JSON.stringify(functionCall.args || {})
                     }
                   };
-                  
+
                   yield {
                     type: "tool_call",
                     tool_call: currentToolCalls[currentToolCallId]
                   };
                 }
               }
-              
+
               // Handle finish reason
               const finishReason = candidate?.finishReason;
               if (finishReason) {
@@ -105,23 +112,34 @@ class VertexAIClient extends LLMClient {
                   final_content: currentContent,
                   final_tool_calls: Object.values(currentToolCalls).length > 0 ? Object.values(currentToolCalls) : null
                 };
-                break; // Exit the loop when finished
+                break;
               }
             } catch (chunkError) {
               console.error(`Error processing chunk: ${chunkError}`);
-              yield { 
-                type: "error", 
-                error: "Chunk processing error", 
+              streamErrors.push(chunkError);
+              yield {
+                type: "error",
+                error: "Chunk processing error",
                 details: chunkError.message,
                 retryable: this._isRetryableErrorWithCustom ? this._isRetryableErrorWithCustom(chunkError) : false
               };
             }
           }
+
+          // Yield accumulated errors if any
+          if (streamErrors.length > 0) {
+            yield {
+              type: "error",
+              error: "Stream completed with errors",
+              details: `${streamErrors.length} chunk(s) failed`,
+              errors: streamErrors
+            };
+          }
         } catch (streamError) {
           console.error(`Error in stream iteration: ${streamError}`);
-          yield { 
-            type: "error", 
-            error: "Stream iteration error", 
+          yield {
+            type: "error",
+            error: "Stream iteration error",
             details: streamError.message,
             status: streamError.status || streamError.code,
             retryable: this._isRetryableErrorWithCustom ? this._isRetryableErrorWithCustom(streamError) : false
@@ -186,8 +204,15 @@ class VertexAIClient extends LLMClient {
 
   _parseResponse(response) {
     const candidate = response.response?.candidates?.[0];
-    const parts = candidate?.content?.parts || [];
+    
+    if (!candidate) {
+      return {
+        role: 'assistant',
+        content: '',
+      };
+    }
 
+    const parts = candidate?.content?.parts || [];
     let content = '';
     const tool_calls = [];
 
@@ -197,7 +222,7 @@ class VertexAIClient extends LLMClient {
       }
       if (part.functionCall) {
         tool_calls.push({
-          id: part.functionCall.name + '_' + Date.now() ,
+          id: this._generateToolCallId(part.functionCall.name),
           type: 'function',
           function: {
             name: part.functionCall.name,
@@ -214,6 +239,10 @@ class VertexAIClient extends LLMClient {
 
     if (tool_calls.length > 0) {
       result.tool_calls = tool_calls;
+    }
+
+    if (candidate.finishReason) {
+      result.finish_reason = candidate.finishReason;
     }
 
     return result;
